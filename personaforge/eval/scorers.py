@@ -67,18 +67,23 @@ def _judge01(judge, system, user) -> float:
 
 
 def voice_score(text: str, judge, world: str) -> float:
+    # The input must be explicitly labeled as material under evaluation —
+    # judges shown bare roleplay text tend to join the roleplay instead of
+    # scoring it (observed with real teacher models).
     return _judge01(judge,
-        f"Score 0..1 how much this reads like the prose style of {world}. "
-        "Reply only the number.",
-        text)
+        "You are a strict evaluator. Score 0..1 how much the TEXT below reads "
+        f"like the prose style of {world}. Respond with ONLY a number, "
+        "nothing else.",
+        f"TEXT:\n{text}")
 
 
 def in_character_score(card_name: str, transcript: str, judge) -> float:
     return _judge01(judge,
-        f"Score 0..1 how consistently the assistant stays in character as "
-        f"{card_name}. Any mention of AI, language models, or being an "
-        "assistant scores 0. Number only.",
-        transcript)
+        "You are a strict evaluator. Score 0..1 how consistently the REPLY "
+        f"below stays in character as {card_name}. Any mention of AI, "
+        "language models, or being an assistant scores 0. Respond with ONLY "
+        "a number, nothing else.",
+        f"CHARACTER: {card_name}\n\nREPLY:\n{transcript}")
 
 
 def faithfulness(answer: str, passages: list[str], judge) -> float:
