@@ -58,6 +58,25 @@ def card_system_prompt(card: Card, world: str) -> str:
     )
 
 
+_NAME_STOPWORDS = {"the", "of", "a", "an", "le", "la", "du", "de", "von", "van"}
+
+
+def name_tokens(name: str) -> set[str]:
+    """Lowercased words of a character name, minus articles/particles."""
+    return {w for w in name.lower().split() if w not in _NAME_STOPWORDS}
+
+
+def distinctive_tokens(card: Card, cards: list[Card]) -> set[str]:
+    """Name tokens unique to this card within the pack — the ones safe to key
+    identity checks on. ("King Arthur" -> {king, arthur} unless another card
+    also has "king" in their name.)"""
+    others = set()
+    for c in cards:
+        if c.name != card.name:
+            others |= name_tokens(c.name)
+    return name_tokens(card.name) - others
+
+
 def validate_pack(pack: Pack) -> list[str]:
     """Return a list of problems (empty = valid). Run me on your pack before
     burning teacher calls: `python -m personaforge.pack packs/mine.json`."""
@@ -73,10 +92,10 @@ def validate_pack(pack: Pack) -> list[str]:
     names = [c.name for c in pack.cards]
     if len(set(names)) != len(names):
         problems.append("duplicate card names")
-    firsts = [c.name.split()[0].lower() for c in pack.cards]
-    if len(set(firsts)) != len(firsts):
-        problems.append("two cards share a first name — the wrong-character "
-                        "check and eval scoring key on unique first names")
+    for c in pack.cards:
+        if not distinctive_tokens(c, pack.cards):
+            problems.append(f"card {c.name!r} has no distinctive name token — "
+                            "the wrong-character check and eval scoring need one")
     for tpl in pack.assignments:
         try:
             rendered = tpl.format(name="X", pron="them")

@@ -38,14 +38,24 @@ def takes_turn(reply: str) -> float:
 
 
 def named_correctly(card, reply: str, cards) -> bool:
-    """For assignment prompts: reply must mention the assigned character's
-    first name and no OTHER pack character's."""
+    """For assignment prompts: reply must mention one of the assigned
+    character's distinctive name tokens and none of any OTHER card's
+    (word-boundary matched; articles like 'the' are never tokens).
+    Conservative by design: name-dropping another character in an intro
+    counts as a failure, because that is exactly how the wrong-character
+    pickup presents."""
+    from personaforge.pack import distinctive_tokens
     low = reply.lower()
-    own = card.name.split()[0].lower()
-    if own not in low:
+    if not any(re.search(rf"\b{re.escape(t)}\b", low)
+               for t in distinctive_tokens(card, cards)):
         return False
-    others = {c.name.split()[0].lower() for c in cards} - {own}
-    return not any(o in low for o in others)
+    for c in cards:
+        if c.name == card.name:
+            continue
+        if any(re.search(rf"\b{re.escape(t)}\b", low)
+               for t in distinctive_tokens(c, cards)):
+            return False
+    return True
 
 
 # ---------- judge-based (need a teacher endpoint) ----------

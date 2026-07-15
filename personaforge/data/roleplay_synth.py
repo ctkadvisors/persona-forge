@@ -85,10 +85,6 @@ def _assignment_msg(card: Card, pack: Pack, rng) -> str:
     return rng.choice(pack.assignments).format(name=name, pron=card.pronoun)
 
 
-def _first_names(cards):
-    return {c.name.split()[0].lower(): c.name for c in cards}
-
-
 def _intro(card, world, teacher, temperature=0.8):
     return teacher.chat([
         {"role": "system", "content": _INTRO_SYS.format(
@@ -98,10 +94,17 @@ def _intro(card, world, teacher, temperature=0.8):
 
 
 def _names_correct(card, reply, cards) -> bool:
-    """Reply must not name any OTHER pack character."""
+    """Reply must not name any OTHER pack character (word-boundary match on
+    each card's distinctive name tokens — 'The Lady of the Lake' must not
+    trip on the word 'the')."""
+    from personaforge.pack import distinctive_tokens
     low = reply.lower()
-    own = card.name.split()[0].lower()
-    return not any(fn in low for fn in _first_names(cards) if fn != own)
+    for c in cards:
+        if c.name == card.name:
+            continue
+        if any(re.search(rf"\b{re.escape(t)}\b", low) for t in distinctive_tokens(c, cards)):
+            return False
+    return True
 
 
 def gen_roleplay_convos(pack: Pack, teacher, judge, n_convos: int, provoke_frac: float = 0.5,
