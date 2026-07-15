@@ -78,10 +78,6 @@ def score(pack: Pack, items: list[dict], judge=None) -> dict:
 
 
 def main() -> None:
-    import torch
-    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-    from peft import PeftModel
-
     from personaforge.teacher import Teacher
 
     pack = load_pack(os.environ["PACK"])
@@ -89,6 +85,23 @@ def main() -> None:
     adapter = os.environ.get("ADAPTER", "out/adapter")
     out_path = os.environ.get("OUT", "out/eval.json")
     judge = Teacher(model=os.environ["JUDGE"]) if os.environ.get("JUDGE") else None
+
+    # Two-phase mode for memory-tight boxes (model + judge may not fit
+    # together): run once WITHOUT JUDGE to generate replies, then again with
+    # SCORE_ONLY=1 and JUDGE to re-score the saved replies model-free.
+    if os.environ.get("SCORE_ONLY") == "1":
+        with open(out_path, encoding="utf-8") as f:
+            items = json.load(f)["items"]
+        report = score(pack, items, judge)
+        report["model_id"], report["adapter"] = model_id, adapter
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump({"report": report, "items": items}, f, ensure_ascii=False, indent=1)
+        print(json.dumps(report, indent=1), flush=True)
+        return
+
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    from peft import PeftModel
 
     print(f"[eval] loading {model_id} + {adapter}...", flush=True)
     quant = (BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_compute_dtype=torch.bfloat16,
