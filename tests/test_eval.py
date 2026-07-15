@@ -62,3 +62,10 @@ def test_score_deterministic_metrics():
     assert r["boilerplate_rate"] == 0.5
     assert r["turn_ok_rate"] == 1.0
     assert "in_character_mean" not in r  # no judge supplied
+
+
+def test_parse01_none_safe():
+    from personaforge.eval.scorers import _parse01
+    assert _parse01(None) == 0.0
+    assert _parse01("") == 0.0
+    assert _parse01("0.8 because reasons") == 0.8

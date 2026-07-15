@@ -34,7 +34,9 @@ class Teacher:
         )
         with urllib.request.urlopen(req, timeout=self.timeout) as r:
             data = json.loads(r.read())
-        return data["choices"][0]["message"]["content"]
+        # Servers occasionally return content: null (e.g. an empty or
+        # tool-call-shaped response) — normalize to "" so callers can filter.
+        return data["choices"][0]["message"]["content"] or ""
 
     def chat(self, messages, temperature: float = 0.8, max_tokens: int = 512) -> str:
         return self._raw_chat(messages, temperature, max_tokens)

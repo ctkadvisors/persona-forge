@@ -3,10 +3,10 @@ need any OpenAI-compatible endpoint (same Teacher class as data generation)."""
 import re
 
 
-def _parse01(s: str) -> float:
+def _parse01(s) -> float:
     try:
         return max(0.0, min(1.0, float(s.strip().split()[0])))
-    except (ValueError, IndexError):
+    except (ValueError, IndexError, AttributeError):
         return 0.0
 
 
