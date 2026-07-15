@@ -50,7 +50,11 @@ def main() -> None:
     else:
         from personaforge.pipeline import build_blended_datasets
         corpus = Path(os.environ["CORPUS"]).read_text(encoding="utf-8")
-        base = build_blended_datasets(corpus, teacher, pack, out_dir)
+        base = build_blended_datasets(
+            corpus, teacher, pack, out_dir,
+            n_chunks=int(os.environ.get("N_CHUNKS", "200")),
+            chat_n=int(os.environ.get("CHAT_N", "800")),
+            dpo_n=int(os.environ.get("DPO_N", "500")))
         existing_sft = read_jsonl(base["sft"]) + read_jsonl(base["sft_val"])
         existing_dpo = read_jsonl(base["dpo"])
     print(f"base: {len(existing_sft)} sft / {len(existing_dpo)} dpo", flush=True)

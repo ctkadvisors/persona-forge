@@ -58,6 +58,44 @@ def card_system_prompt(card: Card, world: str) -> str:
     )
 
 
+def validate_pack(pack: Pack) -> list[str]:
+    """Return a list of problems (empty = valid). Run me on your pack before
+    burning teacher calls: `python -m personaforge.pack packs/mine.json`."""
+    problems = []
+    if not pack.world:
+        problems.append("world is empty")
+    for field_name in ("cards", "scenarios", "provocations", "assignments", "boilerplate"):
+        if not getattr(pack, field_name):
+            problems.append(f"{field_name} is empty")
+    if len(pack.provocations) < 4 or len(pack.assignments) < 4:
+        problems.append("need >=4 provocations and >=4 assignments so an eval "
+                        "seed can be held out (every 4th is reserved)")
+    names = [c.name for c in pack.cards]
+    if len(set(names)) != len(names):
+        problems.append("duplicate card names")
+    firsts = [c.name.split()[0].lower() for c in pack.cards]
+    if len(set(firsts)) != len(firsts):
+        problems.append("two cards share a first name — the wrong-character "
+                        "check and eval scoring key on unique first names")
+    for tpl in pack.assignments:
+        try:
+            rendered = tpl.format(name="X", pron="them")
+        except (KeyError, IndexError) as e:
+            problems.append(f"assignment template {tpl!r} has a bad placeholder: {e}")
+            continue
+        if "{" in rendered:
+            problems.append(f"assignment template {tpl!r} leaves unformatted braces")
+    for ex in pack.exemplars:
+        try:
+            pack.card(ex["character"])
+        except KeyError:
+            problems.append(f"exemplar references unknown character {ex['character']!r}")
+        if not all(len(t) == 2 for t in ex.get("turns", [])):
+            problems.append(f"exemplar for {ex.get('character')} has a turn that "
+                            "is not a [user, assistant] pair")
+    return problems
+
+
 def split_seeds(items: list[str], eval_every: int = 4) -> tuple[list[str], list[str]]:
     """Deterministic train/eval split of seed lists: every `eval_every`-th item
     is reserved for evaluation and never used to generate training data, so
@@ -65,6 +103,20 @@ def split_seeds(items: list[str], eval_every: int = 4) -> tuple[list[str], list[
     train = [x for i, x in enumerate(items) if i % eval_every != eval_every - 1]
     held = [x for i, x in enumerate(items) if i % eval_every == eval_every - 1]
     return train, held
+
+
+def _cli() -> None:
+    import sys
+    pack = load_pack(sys.argv[1])
+    problems = validate_pack(pack)
+    if problems:
+        print(f"INVALID pack ({len(problems)} problems):")
+        for p in problems:
+            print(f"  - {p}")
+        raise SystemExit(1)
+    print(f"OK: {pack.world!r} — {len(pack.cards)} cards, "
+          f"{len(pack.scenarios)} scenarios, {len(pack.provocations)} provocations, "
+          f"{len(pack.assignments)} assignments, {len(pack.exemplars)} exemplars")
 
 
 def exemplar_rows(pack: Pack) -> list[dict]:
@@ -80,3 +132,5 @@ def exemplar_rows(pack: Pack) -> list[dict]:
         validate_sft_row(row)
         rows.append(row)
     return rows
+if __name__ == "__main__":
+    _cli()
