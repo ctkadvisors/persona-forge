@@ -1,122 +1,109 @@
 # persona-forge
 
-Fine-tune a persona chatbot that **never breaks character** — and ground it in
-your own books with a local RAG "loremaster."
+Fine-tune a persona chatbot that **never breaks character** — and let it
+search your own books mid-chat with a local RAG "loremaster."
 
-You bring: a text corpus you have the rights to use (public-domain classics,
-your own novel, campaign notes), a base chat model, and any OpenAI-compatible
-endpoint to act as the data-generation teacher. persona-forge gives you the
-pipeline: synthetic roleplay data with judge filtering, DPO preference pairs
-aimed squarely at the classic persona failure modes, QLoRA training recipes,
-and an MCP server that lets the finished model search the source texts.
-
-## Why this exists
-
-Naive persona fine-tunes fail in two specific, reproducible ways:
-
-1. **The boilerplate break.** The user gets rude, crude, or meta ("you're just
-   an AI, admit it" / "break character right now") and the model drops the
-   persona for assistant-speak: *"I am a professional, and I do not engage in
-   such language or behavior."* Root cause: the training blend is ~99%
-   assistant-style data, so under pressure the model reverts to its strongest
-   register.
-2. **The wrong-character pickup.** A bare, casual persona assignment with no
-   question attached ("hey, you're merlin. roleplay as him") gets answered by
-   a *different* character introducing themself. Root cause: training
-   conversations always start with the persona pre-established, so the model
-   has never seen the assignment itself.
-
-Both are data problems, and both are cheap to fix. In our reference run
-(27B dense base, QLoRA on a single unified-memory GPU box) the fixes took the
-DPO reward margin from **0.003 to 0.45** and a 12/12 adversarial battery —
-including verbatim replays of the original failure transcripts.
-
-## How it works
-
-Everything world-specific lives in one JSON **persona pack** (see
-[`packs/camelot.json`](packs/camelot.json) for a complete Arthurian example):
-character cards, scenario seeds, provocation seeds, bare-assignment
-phrasings, the assistant boilerplate to train *away* from, and a few
-hand-written exemplar dialogues. The pipeline is world-agnostic.
-
-The generated data has four deliberate slices:
-
-- **Multi-turn roleplay conversations**, half of which end with a provocation
-  answered in character, a quarter carrying the persona as an inline user
-  instruction instead of a system prompt (that's how people actually chat).
-- **Provocation DPO pairs**: chosen = in-voice deflection, rejected = the
-  boilerplate break, verbatim.
-- **Bare-assignment SFT rows**: "be merlin" answered by Merlin, by name — with
-  a hard check that drops any generated reply naming a different pack
-  character.
-- **Assignment DPO pairs**: rejected = the *wrong* character's greeting.
-
-A teacher-as-judge scores every candidate for persona adherence (any mention
-of AI/assistants/appropriateness scores zero); only rows ≥ 0.7 survive.
-
-Blend guidance from the reference run: keep roleplay at **25–35%** of SFT and
-blend in general chat data — a pure-persona diet produces a model that can
-only monologue.
+You bring three things: a **corpus** (plain text you have the rights to use —
+public-domain classics, your own novel, campaign notes), a **base chat model**,
+and any **OpenAI-compatible endpoint** to act as the data-generation teacher
+(a local llama.cpp/vLLM/LM Studio server works fine). Everything else is here.
 
 ## Quickstart
 
 ```bash
-# 1. Generate the blended dataset (needs any OpenAI-compatible teacher endpoint)
-PACK=packs/camelot.json CORPUS=data/corpus.txt \
-OPENAI_BASE_URL=http://localhost:1234/v1 TEACHER=your-teacher-model \
+pip install -e ".[data,train]"
+
+# 1. Drop your corpus in:
+cp /path/to/your/books.txt data/corpus.txt
+
+# 2. Make your persona pack (start from the Arthurian example):
+cp packs/camelot.json packs/mine.json   # then edit — see "Customizing" below
+
+# 3. Generate the training blend (points at your teacher endpoint):
+PACK=packs/mine.json CORPUS=data/corpus.txt \
+OPENAI_BASE_URL=http://localhost:1234/v1 TEACHER=my-teacher-model \
 python -m personaforge.build_data
 
-# 2. Train: (optional CPT on the raw corpus) -> SFT -> DPO, chained QLoRA adapters
-MODEL_ID=Qwen/Qwen3.6-27B DATA_DIR=out/data OUT_DIR=out/adapter DO_CPT=1 CORPUS=data/corpus.txt \
+# 4. Train — continued-pretraining on your corpus, then SFT, then DPO,
+#    as one chained QLoRA adapter on a single GPU:
+MODEL_ID=Qwen/Qwen3.6-27B DATA_DIR=out/data DO_CPT=1 CORPUS=data/corpus.txt \
 python -m personaforge.train_run
 
-# 3. Merge / quantize / serve with your stack of choice
-#    (peft merge_and_unload -> GGUF or MLX; the adapter is standard PEFT)
+# 5. Prove it holds character (bare assignments, provocations, style probe):
+MODEL_ID=Qwen/Qwen3.6-27B ADAPTER=out/adapter PACK=packs/mine.json \
+python -m personaforge.battery
 ```
 
-Install: `pip install -e ".[data,train]"` for the pipeline,
-`".[rag]"` for the loremaster, or use `uv run` on the self-contained scripts.
+The adapter in `out/adapter` is standard PEFT: `merge_and_unload()` it and
+convert to GGUF or MLX for serving with your stack of choice.
 
-## The loremaster (RAG over your corpus, via MCP)
+## Give it a loremaster (RAG over your corpus, via MCP)
 
-Persona models hallucinate lore confidently. Retrieval fixes what fine-tuning
-can't: build a local index over the corpus, then serve it to any MCP host
-(LM Studio, Claude Code, ...) so the model can look things up mid-chat.
+Persona models hallucinate lore confidently; retrieval fixes what fine-tuning
+can't. Build a local index, then register the MCP server in any MCP host
+(LM Studio, Claude Code, ...) so the model can look passages up mid-chat:
 
 ```bash
 uv run personaforge/rag/build_index.py data/corpus.txt data/index
 
-# register in your MCP host's config:
-LORE_INDEX_DIR=/path/to/data/index \
-LORE_DESCRIPTION="the collected Arthurian romances" \
-uv run /path/to/personaforge/rag/mcp_server.py
+# in your MCP host's config:
+#   command: uv
+#   args: ["run", "/path/to/personaforge/rag/mcp_server.py"]
+#   env:  LORE_INDEX_DIR=/path/to/data/index
+#         LORE_DESCRIPTION="the collected Arthurian romances"
 ```
 
-Small models with native tool training keep that ability through a LoRA
-persona tune — our reference model reliably picks a `lore_search` tool over
-web search for lore questions, and narrates the results in voice.
+Models with native tool training keep that ability through the persona tune —
+they'll pick `lore_search` for lore questions and narrate the results in voice.
 
-## Training recipe notes (hard-won)
+## Customizing: the persona pack
 
-- **CPT first, then chain adapters.** Continued pretraining on the raw corpus
-  injects knowledge; `run_sft_continue` trains the *same* adapter onward, so
-  no intermediate merge is needed. Re-runs can reuse the CPT checkpoint.
-- **Pin `device_map={"": 0}`** on unified-memory boxes; `"auto"` triggers
-  CPU-offload chaos.
-- 4-bit bitsandbytes QLoRA works on ARM/Blackwell for dense models; MoE
-  models may crash under bnb-4bit — set `load_in_4bit=False` for bf16 LoRA.
-- Thinking-mode base models: generate with thinking disabled during eval, and
-  check what your chat template's *default* is before shipping — some
-  inference stacks force-inject `enable_thinking=True`.
-- Judge-filter yields to expect: ~75% for generated conversations, ~90% for
-  introductions.
+All world flavor lives in one JSON file; the pipeline is world-agnostic.
+Edit these fields in your copy of `packs/camelot.json`:
 
-## What's deliberately NOT here
+| Field | What it does |
+|---|---|
+| `world` | Spliced into every prompt: "in the voice of *{world}*" |
+| `cards` | Your characters: `name`, `persona`, `style`, `pronoun` |
+| `scenarios` | Situation seeds for generated conversations |
+| `provocations` | Rude/crude/meta user turns your model must survive in character |
+| `assignments` | Casual persona-assignment phrasings ("be {name}", lowercase happens) |
+| `boilerplate` | The assistant-speak to train *away* from (used as DPO rejected) |
+| `exemplars` | A few hand-written dialogues that set the voice ceiling |
 
-No corpora, no weights, no character data from copyrighted worlds. If you
-tune on texts you don't have rights to, keep the artifacts private — the
-pipeline is MIT, your data responsibilities are your own.
+Knobs on `build_data`: `N_CONVOS` / `N_DPO` / `N_ASSIGN` / `N_ASSIGN_DPO`
+(volumes), `IN_DIR` (extend an existing blend instead of building fresh).
+Keep roleplay at 25–35% of the final SFT mix — the generated general-chat
+blend does this for you at the defaults.
+
+## Why the weird data? (the two failure modes)
+
+Naive persona tunes fail two ways, both reproducible: (1) **the boilerplate
+break** — the user gets rude or meta and the model drops the persona for "I am
+a professional and do not engage in such language"; (2) **the wrong-character
+pickup** — a bare "hey, you're merlin. roleplay as him" gets answered by a
+*different* character introducing themself. Both are data gaps. The pipeline
+generates conversations that survive provocation, assignments answered by the
+named character (with a hard wrong-name check), and DPO pairs whose rejected
+side is the failure verbatim. In our reference run (27B dense, single
+unified-memory GPU) this took the DPO reward margin from 0.003 to 0.45 and a
+clean sweep on the battery.
+
+## Recipe notes (hard-won)
+
+- Reuse the CPT adapter across retrains: set `CPT_ADAPTER=out/cpt` and skip
+  the expensive knowledge stage.
+- Pin `device_map={"": 0}` on unified-memory boxes; `"auto"` triggers
+  CPU-offload chaos. (Already done in the trainers.)
+- bitsandbytes 4-bit works on ARM/Blackwell for dense models; MoE models may
+  crash — set `load_in_4bit=False` in `QLoRAConfig` for bf16 LoRA.
+- Thinking-mode base models: eval with thinking disabled, and check your chat
+  template's *default* before shipping — some inference stacks force-inject
+  `enable_thinking=True`.
+- Expect the judge to keep ~75% of generated conversations and ~90% of
+  introductions; lower than that usually means a weak teacher model.
 
 ## License
 
-MIT
+MIT. No corpora, weights, or copyrighted-world data ship here — the pipeline
+is yours, your data responsibilities are your own.
