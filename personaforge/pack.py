@@ -58,6 +58,15 @@ def card_system_prompt(card: Card, world: str) -> str:
     )
 
 
+def split_seeds(items: list[str], eval_every: int = 4) -> tuple[list[str], list[str]]:
+    """Deterministic train/eval split of seed lists: every `eval_every`-th item
+    is reserved for evaluation and never used to generate training data, so
+    eval prompts are always unseen."""
+    train = [x for i, x in enumerate(items) if i % eval_every != eval_every - 1]
+    held = [x for i, x in enumerate(items) if i % eval_every == eval_every - 1]
+    return train, held
+
+
 def exemplar_rows(pack: Pack) -> list[dict]:
     """Hand-written exemplar dialogues from the pack as SFT rows."""
     rows = []

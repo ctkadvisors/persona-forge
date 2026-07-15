@@ -22,13 +22,19 @@ from personaforge.data.blend import write_datasets
 from personaforge.data.roleplay_synth import (
     gen_assignment_dpo, gen_assignment_rows, gen_provocation_dpo,
     gen_roleplay_convos, make_persona_judge)
-from personaforge.pack import load_pack
+from personaforge.pack import load_pack, split_seeds
 from personaforge.schema import read_jsonl
 from personaforge.teacher import Teacher
 
 
 def main() -> None:
     pack = load_pack(os.environ["PACK"])
+    # Reserve every 4th provocation/assignment seed for eval_run — training
+    # never sees them, so the eval measures generalization, not memorization.
+    pack.provocations, held_prov = split_seeds(pack.provocations)
+    pack.assignments, held_assign = split_seeds(pack.assignments)
+    print(f"held out for eval: {len(held_prov)} provocations, "
+          f"{len(held_assign)} assignments", flush=True)
     out_dir = os.environ.get("OUT_DIR", "out/data")
     n_convos = int(os.environ.get("N_CONVOS", "700"))
     n_dpo = int(os.environ.get("N_DPO", "350"))

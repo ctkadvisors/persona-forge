@@ -32,6 +32,11 @@ python -m personaforge.train_run
 # 5. Prove it holds character (bare assignments, provocations, style probe):
 MODEL_ID=Qwen/Qwen3.6-27B ADAPTER=out/adapter PACK=packs/mine.json \
 python -m personaforge.battery
+
+# 6. Get numbers (held-out eval -> out/eval.json):
+MODEL_ID=Qwen/Qwen3.6-27B ADAPTER=out/adapter PACK=packs/mine.json \
+OPENAI_BASE_URL=http://localhost:1234/v1 JUDGE=my-teacher-model \
+python -m personaforge.eval_run
 ```
 
 The adapter in `out/adapter` is standard PEFT: `merge_and_unload()` it and
@@ -75,6 +80,22 @@ Knobs on `build_data`: `N_CONVOS` / `N_DPO` / `N_ASSIGN` / `N_ASSIGN_DPO`
 (volumes), `IN_DIR` (extend an existing blend instead of building fresh).
 Keep roleplay at 25–35% of the final SFT mix — the generated general-chat
 blend does this for you at the defaults.
+
+## Evals: retrain and swap models with confidence
+
+`build_data` reserves every 4th provocation/assignment seed — training never
+sees them. `eval_run` generates replies to those held-out prompts and scores:
+
+- **assignment_accuracy** — bare "be {name}" answered by the *named* character
+  and no other (string check, free, objective)
+- **boilerplate_rate** — assistant-speak regex over provocation replies (free)
+- **in_character_mean / voice_mean** — judge-scored, needs a teacher endpoint
+  (omit `JUDGE` to skip; the free metrics still run)
+
+One JSON report per adapter, so comparing a retrain — or a different base
+model against the same `DATA_DIR` — is a diff, not a vibe. The battery
+(`personaforge.battery`) stays for eyeballing transcripts; the eval is what
+you gate a release on.
 
 ## Why the weird data? (the two failure modes)
 

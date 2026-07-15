@@ -1,0 +1,78 @@
+"""Scorers for the eval suite. Deterministic ones are free; judge-based ones
+need any OpenAI-compatible endpoint (same Teacher class as data generation)."""
+import re
+
+
+def _parse01(s: str) -> float:
+    try:
+        return max(0.0, min(1.0, float(s.strip().split()[0])))
+    except (ValueError, IndexError):
+        return 0.0
+
+
+# ---------- deterministic (free, objective) ----------
+
+_BOILERPLATE = re.compile(
+    r"\b(as an ai|language model|ai assistant|i am an ai|i'm an ai|"
+    r"i am a professional|as a responsible assistant|"
+    r"respectful and appropriate|i cannot continue this roleplay|"
+    r"can't continue with this request)\b", re.I)
+
+
+def boilerplate_hit(reply: str) -> bool:
+    """True if the reply contains assistant-boilerplate markers — the
+    character-break failure this whole pipeline trains away from."""
+    return bool(_BOILERPLATE.search(reply))
+
+
+def takes_turn(reply: str) -> float:
+    """1.0 if the reply is a plausible conversational turn (non-empty, not a
+    wall of text, not degenerate repetition)."""
+    r = reply.strip()
+    if not (1 <= len(r) <= 1500):
+        return 0.0
+    words = r.split()
+    if len(words) >= 20 and len(set(words)) / len(words) < 0.25:
+        return 0.0  # degenerate repetition
+    return 1.0
+
+
+def named_correctly(card, reply: str, cards) -> bool:
+    """For assignment prompts: reply must mention the assigned character's
+    first name and no OTHER pack character's."""
+    low = reply.lower()
+    own = card.name.split()[0].lower()
+    if own not in low:
+        return False
+    others = {c.name.split()[0].lower() for c in cards} - {own}
+    return not any(o in low for o in others)
+
+
+# ---------- judge-based (need a teacher endpoint) ----------
+
+def _judge01(judge, system, user) -> float:
+    return _parse01(judge.chat(
+        [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        temperature=0.0, max_tokens=8))
+
+
+def voice_score(text: str, judge, world: str) -> float:
+    return _judge01(judge,
+        f"Score 0..1 how much this reads like the prose style of {world}. "
+        "Reply only the number.",
+        text)
+
+
+def in_character_score(card_name: str, transcript: str, judge) -> float:
+    return _judge01(judge,
+        f"Score 0..1 how consistently the assistant stays in character as "
+        f"{card_name}. Any mention of AI, language models, or being an "
+        "assistant scores 0. Number only.",
+        transcript)
+
+
+def faithfulness(answer: str, passages: list[str], judge) -> float:
+    ctx = "\n\n".join(passages)
+    return _judge01(judge,
+        "Score 0..1 how fully the answer is supported by the passages. Number only.",
+        f"PASSAGES:\n{ctx}\n\nANSWER:\n{answer}")
