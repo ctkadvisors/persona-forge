@@ -1,0 +1,29 @@
+[project]
+name = "personaforge"
+version = "0.1.0"
+description = "Fine-tune persona chatbots that never break character: synthetic roleplay data with judge filtering, DPO against assistant boilerplate, and a local RAG loremaster (MCP)."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [{ name = "Chris Knuteson" }]
+keywords = ["fine-tuning", "roleplay", "persona", "qlora", "dpo", "mcp", "rag"]
+dependencies = []
+
+[project.optional-dependencies]
+data = ["datasets"]
+train = ["torch", "transformers", "trl", "peft", "bitsandbytes", "datasets"]
+rag = ["sentence-transformers", "numpy", "mcp"]
+dev = ["pytest"]
+
+[project.urls]
+Repository = "https://github.com/chrisknu/persona-forge"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["personaforge"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
