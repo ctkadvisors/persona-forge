@@ -16,7 +16,7 @@ rag = ["sentence-transformers", "numpy", "mcp"]
 dev = ["pytest"]
 
 [project.urls]
-Repository = "https://github.com/chrisknu/persona-forge"
+Repository = "https://github.com/ctkadvisors/persona-forge"
 
 [build-system]
 requires = ["hatchling"]
