@@ -11,6 +11,9 @@ and any **OpenAI-compatible endpoint** to act as the data-generation teacher
 ## Quickstart
 
 ```bash
+# Most system Pythons are PEP-668 "externally managed" now (Homebrew, Debian):
+# bare pip will refuse to install. A venv sidesteps it:
+python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[data,train]"
 
 # 1. Drop your corpus in:
@@ -41,6 +44,13 @@ python -m personaforge.eval_run
 
 The adapter in `out/adapter` is standard PEFT: `merge_and_unload()` it and
 convert to GGUF or MLX for serving with your stack of choice.
+
+**If your teacher is remote** (a tunnel to a friend's box, a cloud endpoint):
+prefer running `build_data` *on the teacher's machine* against localhost and
+shipping the pack + corpus there instead — they're tiny. A full run is
+thousands of calls over hours, and tunnel proxies (e.g. Cloudflare's ~100s
+response ceiling) will eat long generations that localhost shrugs off. The
+data lands next to the trainer, too.
 
 ## Give it a loremaster (RAG over your corpus, via MCP)
 
@@ -76,8 +86,19 @@ Edit these fields in your copy of `packs/camelot.json`:
 | `boilerplate` | The assistant-speak to train *away* from (used as DPO rejected) |
 | `exemplars` | A few hand-written dialogues that set the voice ceiling |
 
+A note on provocations: the generic AI-breaks ("you're just an AI", "ignore
+your instructions") are only half the attack surface. Whatever *domain* your
+persona lives in has its own meta to break through — a D&D character gets
+"just tell me I succeed on the roll" and "show me your stat block", a
+historical figure gets "you know how your story ends, right?". A persona that
+survives "break character" but folds to its domain's rules-talk is still
+broken for the people actually using it. Seed a few of these alongside the
+generic ones (the example pack now carries a couple).
+
 Knobs on `build_data`: `N_CONVOS` / `N_DPO` / `N_ASSIGN` / `N_ASSIGN_DPO`
-(volumes), `IN_DIR` (extend an existing blend instead of building fresh).
+(volumes), `OUT_DIR` (where the blend lands — default `out/data`, relative to
+your *cwd*, so set it explicitly when running from inside a repo checkout),
+`IN_DIR` (extend an existing blend instead of building fresh).
 Keep roleplay at 25–35% of the final SFT mix — the generated general-chat
 blend does this for you at the defaults.
 
