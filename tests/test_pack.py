@@ -36,3 +36,17 @@ def test_assignment_templates_format():
     for tpl in pack.assignments:
         msg = tpl.format(name=card.name, pron=card.pronoun)
         assert "{" not in msg
+
+
+def test_mythic_pack_validates():
+    from personaforge.pack import load_pack
+    p = load_pack("packs/mythic.json")
+    assert len(p.cards) == 8 and len(p.scenarios) >= 12
+    assert p.assignments and p.provocations and p.boilerplate
+
+
+def test_exemplars_block():
+    from personaforge.data.exemplars import EXEMPLARS, exemplar_block
+    assert len(EXEMPLARS) >= 4
+    block = exemplar_block(3)
+    assert "elevated register" in block and "—" in block
