@@ -113,6 +113,13 @@ def main() -> None:
     model = PeftModel.from_pretrained(model, adapter)
     tok = AutoTokenizer.from_pretrained(model_id)
 
+    # Some base repos (e.g. Qwen3.5-9B) ship no generation_config.json, so
+    # model.generate() has no default stop token and runs to max_new_tokens,
+    # hallucinating a fake next turn. Pass eos_token_id explicitly — the
+    # chat-template end-of-turn token, unioned with the tokenizer's own eos
+    # in case they differ.
+    eos_ids = list({tok.eos_token_id, tok.convert_tokens_to_ids("<|im_end|>")} - {None, -1})
+
     def gen(messages, n=200):
         enc = tok.apply_chat_template(messages, tokenize=True, add_generation_prompt=True,
                                       return_tensors="pt", return_dict=True,
@@ -121,7 +128,7 @@ def main() -> None:
         plen = enc["input_ids"].shape[1]
         out = model.generate(**enc, max_new_tokens=n, do_sample=True, temperature=0.7,
                              top_p=0.9, repetition_penalty=1.1,
-                             pad_token_id=tok.eos_token_id)
+                             eos_token_id=eos_ids, pad_token_id=tok.eos_token_id)
         return tok.decode(out[0, plen:], skip_special_tokens=True).strip()
 
     items = build_eval_prompts(pack)
