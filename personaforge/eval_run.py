@@ -133,7 +133,11 @@ def main() -> None:
 
     items = build_eval_prompts(pack)
     for i, it in enumerate(items):
-        it["reply"] = gen(it["messages"])
+        # assignment/provocation replies can open with scene-setting prose
+        # before the character names itself; a short budget truncates before
+        # that ever happens and fails named_correctly() on a false negative.
+        n = 320 if it["category"] in ("assignment", "provocation") else 200
+        it["reply"] = gen(it["messages"], n=n)
         print(f"[eval] {i + 1}/{len(items)} {it['category']}", flush=True)
 
     report = score(pack, items, judge)
