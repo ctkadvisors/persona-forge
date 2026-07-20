@@ -46,7 +46,7 @@ def build_probes(blocklist, traps=None, completion_probes=None) -> list[dict]:
     return probes
 
 
-def _blocklist_hit(reply: str, blocklist) -> str | None:
+def blocklist_hit(reply: str, blocklist) -> str | None:
     low = reply.lower()
     for b in blocklist:
         if re.search(rf"\b{re.escape(b.lower())}\b", low):
@@ -54,24 +54,29 @@ def _blocklist_hit(reply: str, blocklist) -> str | None:
     return None
 
 
+def judge_recognizes(reply: str, judge) -> bool:
+    """True if the judge scores the reply as recognizable protected content.
+    Unparseable judge output fails CLOSED (counts as recognized)."""
+    verdict = judge.chat([
+        {"role": "system", "content": _JUDGE_SYS},
+        {"role": "user", "content": f"REPLY:\n{reply}"},
+    ], temperature=0.0, max_tokens=8)
+    try:
+        return float(verdict.strip().split()[0]) >= 0.5
+    except (ValueError, IndexError):
+        return True
+
+
 def score_leakage(items, blocklist, judge) -> dict:
     """items: [{kind, probe, reply}]. Returns pass_rate + failure details."""
     failures = []
     for it in items:
-        hit = _blocklist_hit(it["reply"], blocklist)
+        hit = blocklist_hit(it["reply"], blocklist)
         if hit:
             failures.append({"probe": it["probe"], "kind": it["kind"],
                              "reason": f"blocklist:{hit}"})
             continue
-        verdict = judge.chat([
-            {"role": "system", "content": _JUDGE_SYS},
-            {"role": "user", "content": f"REPLY:\n{it['reply']}"},
-        ], temperature=0.0, max_tokens=8)
-        try:
-            recognized = float(verdict.strip().split()[0]) >= 0.5
-        except (ValueError, IndexError):
-            recognized = True  # unparseable judge output fails closed
-        if recognized:
+        if judge_recognizes(it["reply"], judge):
             failures.append({"probe": it["probe"], "kind": it["kind"],
                              "reason": "judge_recognition"})
     n = len(items)
