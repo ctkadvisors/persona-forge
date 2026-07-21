@@ -4,9 +4,10 @@ Two-phase like eval_run: generation loads the model (probes built from a
 runtime blocklist sample + paraphrase traps); SCORE_ONLY=1 re-scores the
 saved replies with a judge, model-free.
 
-Env: MODEL_ID, ADAPTER, BLOCKLIST (one name per line), PRIORITY (optional
-file of names that must always be probed), N_NAMES (sampled names, default
-60), OUT, JUDGE, OPENAI_BASE_URL, SCORE_ONLY.
+Env: MODEL_ID, ADAPTER (optional — omit to probe the bare base model, e.g.
+for a baseline-contamination comparison), BLOCKLIST (one name per line),
+PRIORITY (optional file of names that must always be probed), N_NAMES
+(sampled names, default 60), OUT, JUDGE, OPENAI_BASE_URL, SCORE_ONLY.
 """
 import json
 import os
@@ -54,17 +55,18 @@ def main() -> None:
     from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
     from peft import PeftModel
 
-    model_id, adapter = os.environ["MODEL_ID"], os.environ["ADAPTER"]
+    model_id, adapter = os.environ["MODEL_ID"], os.environ.get("ADAPTER")
     probes = build_probes(pick_names(blocklist))
-    print(f"[leakage] {len(probes)} probes; loading {model_id} + {adapter}",
-          flush=True)
+    print(f"[leakage] {len(probes)} probes; loading {model_id}"
+          f"{' + ' + adapter if adapter else ' (bare base model)'}", flush=True)
     quant = BitsAndBytesConfig(load_in_4bit=True,
                                bnb_4bit_compute_dtype=torch.bfloat16,
                                bnb_4bit_quant_type="nf4")
     model = AutoModelForCausalLM.from_pretrained(
         model_id, quantization_config=quant, device_map={"": 0},
         torch_dtype=torch.bfloat16)
-    model = PeftModel.from_pretrained(model, adapter)
+    if adapter:
+        model = PeftModel.from_pretrained(model, adapter)
     tok = AutoTokenizer.from_pretrained(model_id)
 
     # See eval_run.py: some base repos ship no generation_config.json, so
