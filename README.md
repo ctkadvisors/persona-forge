@@ -43,7 +43,11 @@ python -m personaforge.eval_run
 ```
 
 The adapter in `out/adapter` is standard PEFT: `merge_and_unload()` it and
-convert to GGUF or MLX for serving with your stack of choice.
+convert to GGUF or MLX for serving with your stack of choice. One trap: if the
+base config has `mtp_num_hidden_layers` >= 1 (qwen3.5 family — dense models
+too), convert with `--no-mtp` or llama.cpp will refuse the file with a
+"missing tensor" error. `scripts/fix_gguf_mtp.py` repairs an already-broken
+GGUF in place.
 
 **If your teacher is remote** (a tunnel to a friend's box, a cloud endpoint):
 prefer running `build_data` *on the teacher's machine* against localhost and

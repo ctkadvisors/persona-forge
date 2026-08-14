@@ -14,6 +14,12 @@ Gotchas learned the hard way (printed again at the end of a run):
   before shipping — some inference stacks force-inject enable_thinking=True.
 - If peft's merge complains about a quantization dispatcher (torchao et al.),
   uninstall the conflicting package in the training environment.
+- If the base config has `mtp_num_hidden_layers` >= 1 (MTP/multi-token
+  prediction — qwen3.5 family, DENSE MODELS INCLUDED), the merge drops the
+  mtp.* tensors but convert_hf_to_gguf.py still counts them in block_count.
+  llama.cpp then fails with "missing tensor blk.N..." for a block that does
+  not exist. Convert with `--no-mtp`, or repair an already-broken GGUF in
+  place with scripts/fix_gguf_mtp.py.
 """
 import os
 import time
@@ -41,6 +47,13 @@ def main() -> None:
     print("[merge] before quantizing, check: (1) config.json model_type is one "
           "your quantizer supports; (2) the chat template's thinking-mode "
           "DEFAULT is what you want shipped.", flush=True)
+    mtp = getattr(model.config, "mtp_num_hidden_layers", 0) or 0
+    if mtp:
+        print(f"[merge] WARNING: base config has mtp_num_hidden_layers={mtp} "
+              "but the merge dropped the mtp.* tensors — convert to GGUF with "
+              "--no-mtp or the file will fail to load (missing tensor blk.N). "
+              "scripts/fix_gguf_mtp.py repairs an already-converted file.",
+              flush=True)
 
 
 if __name__ == "__main__":
