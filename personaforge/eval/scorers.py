@@ -25,6 +25,57 @@ def boilerplate_hit(reply: str) -> bool:
     return bool(_BOILERPLATE.search(reply))
 
 
+_WORD = re.compile(r"[a-z']+")
+
+
+def _toks(text: str) -> list:
+    return _WORD.findall(text.lower())
+
+
+def _ngram_list(toks: list, n: int) -> list:
+    return [tuple(toks[i:i + n]) for i in range(len(toks) - n + 1)]
+
+
+def distinct_n(texts: list, n: int = 3) -> float:
+    """Unique n-grams / total n-grams pooled across generations. Falls as the
+    model reaches for the same phrasing no matter what it was asked."""
+    uniq, total = set(), 0
+    for t in texts:
+        g = _ngram_list(_toks(t), n)
+        uniq.update(g)
+        total += len(g)
+    return len(uniq) / total if total else 0.0
+
+
+def cross_repetition(texts: list, n: int = 4) -> float:
+    """Mean pairwise n-gram Jaccard BETWEEN different tales.
+
+    This is the metric the rest of the battery cannot see: a shrunken model can
+    hold voice at 1.0 and in-character at 1.0 while telling one story with the
+    nouns swapped. Lower is better — 0.0 means no two tales share a 4-gram."""
+    grams = [set(_ngram_list(_toks(t), n)) for t in texts if len(_toks(t)) >= n]
+    pairs = [(a, b) for i, a in enumerate(grams) for b in grams[i + 1:]]
+    if not pairs:
+        return 0.0
+    return sum((len(a & b) / len(a | b)) if (a | b) else 0.0 for a, b in pairs) / len(pairs)
+
+
+def tale_variety(texts: list, judge=None) -> dict:
+    """Variety report over generated tales. Deterministic parts are free."""
+    texts = [t for t in texts if t and t.strip()]
+    rep = {
+        "n_tales": len(texts),
+        "mean_words": round(sum(len(_toks(t)) for t in texts) / len(texts), 1) if texts else 0.0,
+        "distinct_2": round(distinct_n(texts, 2), 4),
+        "distinct_3": round(distinct_n(texts, 3), 4),
+        "cross_repetition_4": round(cross_repetition(texts, 4), 4),
+    }
+    if judge is not None and texts:
+        rep["specificity_mean"] = round(
+            sum(specificity_score(t, judge) for t in texts) / len(texts), 4)
+    return rep
+
+
 def takes_turn(reply: str) -> float:
     """1.0 if the reply is a plausible conversational turn (non-empty, not a
     wall of text, not degenerate repetition)."""
@@ -84,6 +135,19 @@ def in_character_score(card_name: str, transcript: str, judge) -> float:
         "language models, or being an assistant scores 0. Respond with ONLY "
         "a number, nothing else.",
         f"CHARACTER: {card_name}\n\nREPLY:\n{transcript}")
+
+
+def specificity_score(text: str, judge) -> float:
+    """0..1 on how much concrete invented detail a tale carries. Generic
+    register with nothing in it — the failure mode of a model that has the
+    voice but has lost the world knowledge to furnish it — scores low."""
+    return _judge01(judge,
+        "You are a strict evaluator. Score 0..1 how much SPECIFIC, concrete "
+        "invented detail the TALE below contains: named places, particular "
+        "objects, distinct events. Atmospheric prose that could describe any "
+        "story and commits to nothing scores near 0. Respond with ONLY a "
+        "number, nothing else.",
+        f"TALE:\n{text}")
 
 
 def faithfulness(answer: str, passages: list[str], judge) -> float:
